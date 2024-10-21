@@ -376,7 +376,44 @@ if __name__ == '__main__':
     plt.plot([0, nx*dx], [0, nx*dx*los[1]/los[0]], 'r')
     plt.show()
 #%%
+def get_RSD(delta, los, dx=None):
+    delta = np.asarray(delta)
+    los = np.asarray(los)
+    los = los/np.linalg.norm(los)
+    assert np.ndim(delta) == los.shape[0]
+    if dx is None: dx = 1.0
+    if np.ndim(dx) == 0:
+        dx = [dx]*los.shape[0]
+    else:
+        assert len(dx) == los.shape[0]
+    delta_fft = np.fft.fftn(delta)
+    k = [np.fft.fftfreq(ii, d=d)*2*np.pi for ii, d in zip(delta.shape, dx)]
+    kall = np.asfortranarray(np.meshgrid(*k, indexing='ij'))
+    k2 = np.sum(kall**2, axis=0)
+    #print(k2[0,0,0])
+    k2[0,0,0] = np.nan
+    k_para = (kall.T@los).T
+    mu2 = k_para**2/k2
+    mu2[0,0,0] = 0.0
+    delta_vel = np.fft.ifftn(delta_fft*mu2)
+    #print(np.abs(delta_vel.imag).max())
+    return delta_vel.real
 #%%
+if __name__ == '__main__':
+    from scipy.io import loadmat
+    ic_num = 1040
+    z = 10
+    d = loadmat('/rds/user/fd426/hpc-work/21cm/intermediate/xray_analysis/sim_fd_xray_IC_1040/Tb_fields/Tb_field_%d_fd_xray_IC_%d.mat'%(z, ic_num))
+    Tlin = d['Tlin']
+    Tb = d['Tb']
+    delta_DM = loadmat('/rds/project/rds-PJtLerV8oy0/JVD_21cmSPACE_Precomputed_Grids/IC/128/delta%d.mat'%ic_num)['delta']
+    Dz = loadmat('/home/fd426/21cmSPACE/Dz.mat')['D'][0]
+    z4D = loadmat('/home/fd426/21cmSPACE/zs_for_D.mat')['zs'][0]
+    delta_DM = delta_DM/np.interp(40, z4D, Dz) * np.interp(z, z4D, Dz)
+    delta_DM = np.clip(delta_DM, -0.999, 1.3)
+    delta_v = get_RSD(delta_DM, [0.0, 0.0, 1.0])
+    Tlin_test = Tb*(delta_v+1)
+    print(np.abs(Tlin_test-Tlin).max())
 #%%
 #%%
 
