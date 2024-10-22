@@ -148,7 +148,7 @@ plt.figure()
 plt.loglog(l_box, cl_box)
 plt.loglog(l_lc, cl_lc)
 plt.xlabel('l')
-plt.xlabel('C_l/mK^2')
+plt.ylabel('C_l/mK^2')
 plt.show()
 
 
