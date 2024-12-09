@@ -3,6 +3,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 from scipy.io import loadmat
 from scipy.interpolate import UnivariateSpline, LinearNDInterpolator, NearestNDInterpolator, interpn
+import warnings
+from scipy import fft
 #%%
 def plot_pn(x, y, err=None, c=None, ls_pos='-', ls_neg='--', label=None, n_interp=1000, **kwargs):
     '''
@@ -73,29 +75,46 @@ def plot_pn(x, y, err=None, c=None, ls_pos='-', ls_neg='--', label=None, n_inter
 #plt.legend()
 #plt.show()
 ##%%
-def pk1d(field, dx, get_var=True, field2=None, kbins=None, dk_fct=4.0, corr_func=lambda x, y: (x*y.conj()).real):
-    fft1 = np.fft.rfftn(field)/np.size(field)
+def pk1d(field, dx, get_var=True, simple_var=True, field2=None, kbins=None, dk_fct=4.0, corr_func=lambda x, y: (x*y.conj()).real, win_norm=None):
+    '''
+    If field2 is provided, the number of dimension of field2 should not exceed field's.\n
+    If get_var and simple_var, estimate variance simply by pk**2/(Nmode+1), where Nmode is the number of ceils in k space to estimate the pk for each k bin. You can calculate Nmode easily from this variance and the +1 is to correct the bias caused by variance in the estimated pk.\n
+    NOTE: if win_norm is not None, the shrinkage of volume due to window would also be taken into account\n
+    P(k) = corr_func(delta_1, delta2)/vol. If win_norm is None, use the volume of field as vol, otherwise use the volume of win_norm to estimate, i.e. sum(win_norm*dvol). We require the number of dimension is the same for win_norm and field. For example, for underlying field f and f2 and the measured ones are field=w*f and field2=w2*f2, then set win_norm=w*w2 would give an estimator of power spectrum between f and f2.\n
+    NOTE: if provided win_norm would only be used to normalize the P(k) and would not be multiplied to fields inside the function, i.e. it has already be multiplied to the fields before input to the function\n
+    NOTE: if field2 is None, win_norm should be the squre of the window function applied to field\n
+    '''
+    fft1 = fft.rfftn(field)
     ndim = np.ndim(fft1)
     if np.ndim(dx) == 0:
         dx = [dx]*ndim
+    fft1 = fft1 * np.prod(dx)
+    if win_norm is None:
+        vol = np.prod(dx)*np.size(field)
+        vol_fct_var = 1.0
+    else:
+        win_norm = np.asarray(win_norm)
+        assert np.ndim(win_norm) == ndim
+        vol = np.sum(win_norm)*np.prod(dx)
+        vol0 = np.prod(dx)*np.size(field)
+        vol_fct_var = vol0*np.sum(win_norm**2)*np.prod(dx)/vol**2 # take into the effect of shrinkage in volume
     if field2 is None:
         fft2 = fft1
-        vol = np.prod(dx)*np.size(field)
     else:
         ndim2 = np.ndim(field2)
-        vol = np.prod(dx[:ndim2])*np.size(field2)
+        assert ndim2 <= ndim
         if ndim2 < ndim:
-            fft2 = np.fft.fftn(field2)
+            fft2 = fft.fftn(field2)
             fft2 = np.expand_dims(fft2, axis=tuple(-np.arange(ndim-ndim2)-1))
         else:
-            fft2 = np.fft.rfftn(field2)
-        fft2 = fft2/np.size(field2)
-        #fft2 = np.fft.rfftn(field2)/np.size(field2)
+            fft2 = fft.rfftn(field2)
+        fft2 = fft2*np.prod(dx[:ndim2])
+        #fft2 = fft.rfftn(field2)/np.size(field2)
     #corr = (fft1 * fft2.conj()).real
     #corr = corr * np.prod(dx) * np.size(field)
-    corr = corr_func(fft1, fft2) * vol
-    kall = [np.fft.fftfreq(field.shape[ii], d=dx[ii])*2*np.pi for ii in range(len(dx)-1)]
-    kall.append(np.fft.rfftfreq(field.shape[-1], d=dx[-1])*2*np.pi)
+    corr = corr_func(fft1, fft2) / vol
+    kall = [fft.fftfreq(field.shape[ii], d=dx[ii])*2*np.pi for ii in range(len(dx)-1)]
+    kall.append(fft.rfftfreq(field.shape[-1], d=dx[-1])*2*np.pi)
     kmesh = np.meshgrid(*kall, indexing='ij')
     k1d = 0.0
     for km in kmesh:
@@ -124,7 +143,9 @@ def pk1d(field, dx, get_var=True, field2=None, kbins=None, dk_fct=4.0, corr_func
     norm = norm[v]
     pk = pk/norm
     k = k/norm
-    if get_var:
+    if get_var and simple_var:
+        pkvar = pk**2*vol_fct_var/(1.0+norm)
+    elif get_var:
         pkf = UnivariateSpline(k, pk, k=1, s=0, ext=0)
         pkitp = pkf(k1d)
         dpk = corr - pkitp
@@ -180,27 +201,44 @@ if __name__ == '__main__':
     plt.show()
 #%%
 
-def pk2d(field, dx, get_var=True, field2=None, kbins=None, dkp_fct=4.0, dkz_fct=4.0, corr_func=lambda x, y: (x*y.conj()).real):
-    fft1 = np.fft.rfftn(field)/np.size(field)
+def pk2d(field, dx, get_var=True, simple_var=True, field2=None, kbins=None, dkp_fct=4.0, dkz_fct=4.0, corr_func=lambda x, y: (x*y.conj()).real, win_norm=None):
+    '''
+    If field2 is provided, the number of dimension of field2 should not exceed field's.\n
+    If get_var and simple_var, estimate variance simply by pk**2/(Nmode+1), where Nmode is the number of ceils in k space to estimate the pk for each k bin. You can calculate Nmode easily from this variance and the +1 is to correct the bias caused by variance in the estimated pk.\n
+    NOTE: if win_norm is not None, the shrinkage of volume due to window would also be taken into account\n
+    P(k) = corr_func(delta_1, delta2)/vol. If win_norm is None, use the volume of field as vol, otherwise use the volume of win_norm to estimate, i.e. sum(win_norm*dvol). We require the number of dimension is the same for win_norm and field. For example, for underlying field f and f2 and the measured ones are field=w*f and field2=w2*f2, then set win_norm=w*w2 would give an estimator of power spectrum between f and f2.\n
+    NOTE: if provided win_norm would only be used to normalize the P(k) and would not be multiplied to fields inside the function, i.e. it has already be multiplied to the fields before input to the function\n
+    NOTE: if field2 is None, win_norm should be the squre of the window function applied to field\n
+    '''
+    fft1 = fft.rfftn(field)
     ndim = np.ndim(fft1)
     if np.ndim(dx) == 0:
         dx = [dx]*ndim
+    fft1 = fft1 * np.prod(dx)
+    if win_norm is None:
+        vol = np.prod(dx)*np.size(field)
+        vol_fct_var = 1.0
+    else:
+        win_norm = np.asarray(win_norm)
+        assert np.ndim(win_norm) == ndim
+        vol = np.sum(win_norm)*np.prod(dx)
+        vol0 = np.prod(dx)*np.size(field)
+        vol_fct_var = vol0*np.sum(win_norm**2)*np.prod(dx)/vol**2 # take into the effect of shrinkage in volume
     if field2 is None:
         fft2 = fft1
-        vol = np.prod(dx)*np.size(field)
     else:
         ndim2 = np.ndim(field2)
-        vol = np.prod(dx[:ndim2])*np.size(field2)
+        assert ndim2 <= ndim
         if ndim2 < ndim:
-            fft2 = np.fft.fftn(field2)
+            fft2 = fft.fftn(field2)
             fft2 = np.expand_dims(fft2, axis=tuple(-np.arange(ndim-ndim2)-1))
         else:
-            fft2 = np.fft.rfftn(field2)
-        fft2 = fft2/np.size(field2)
+            fft2 = fft.rfftn(field2)
+        fft2 = fft2*np.prod(dx[:ndim2])
     #corr = (fft1 * fft2.conj()).real * vol
-    corr = corr_func(fft1, fft2) * vol
-    kall = [np.fft.fftfreq(corr.shape[ii], d=dx[ii])*2*np.pi for ii in range(len(dx)-1)]
-    kall.append(np.fft.rfftfreq(field.shape[-1], d=dx[-1])*2*np.pi)
+    corr = corr_func(fft1, fft2) / vol
+    kall = [fft.fftfreq(corr.shape[ii], d=dx[ii])*2*np.pi for ii in range(len(dx)-1)]
+    kall.append(fft.rfftfreq(field.shape[-1], d=dx[-1])*2*np.pi)
     kmesh = np.meshgrid(*kall, indexing='ij')
     kzall = kmesh[-1].reshape(-1)
     kpall = 0.0
@@ -245,7 +283,9 @@ def pk2d(field, dx, get_var=True, field2=None, kbins=None, dkp_fct=4.0, dkz_fct=
     pk[~v] = np.nan
     kpeff[~v] = np.nan
     kpeff[~v] = np.nan
-    if get_var:
+    if get_var and simple_var:
+        pkvar = pk**2*vol_fct_var/(1.0+norm)
+    elif get_var:
         xitp = np.asfortranarray([kpeff[v], kzeff[v]]).T
         pkf = LinearNDInterpolator(xitp, pk[v])
         pkf1 = NearestNDInterpolator(xitp, pk[v])
@@ -520,14 +560,14 @@ if __name__ == '__main__':
 #Tblc = thf.get_lc(z0)
 ##%%
 #inu = 100
-#Tbcut = np.fft.rfft(Tblc - Tblc.mean(axis=(0,1), keepdims=True), axis=-1)
-#kbcut = 2*np.pi*np.fft.rfftfreq(Tblc.shape[-1], d=xf.Lpix)
+#Tbcut = fft.rfft(Tblc - Tblc.mean(axis=(0,1), keepdims=True), axis=-1)
+#kbcut = 2*np.pi*fft.rfftfreq(Tblc.shape[-1], d=xf.Lpix)
 #dnucut = xf.cosmo.k2dnu(z0, kbcut)
 #icut = np.where(dnucut < 1)[0][0]
 #kmin = kbcut[icut]
 #Tbcut[...,:icut] = 0.0
 #print(kmin, icut, dnucut[icut])
-#Tbcut = np.fft.irfft(Tbcut, axis=-1)
+#Tbcut = fft.irfft(Tbcut, axis=-1)
 ##%%
 #print(xf.nu_keV[inu])
 ##f1 = Tbcut**2
