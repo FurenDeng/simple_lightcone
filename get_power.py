@@ -84,7 +84,7 @@ def pk1d(field, dx, get_var=True, simple_var=True, field2=None, kbins=None, dk_f
     NOTE: if provided win_norm would only be used to normalize the P(k) and would not be multiplied to fields inside the function, i.e. it has already be multiplied to the fields before input to the function\n
     NOTE: if field2 is None, win_norm should be the squre of the window function applied to field\n
     '''
-    fft1 = fft.rfftn(field)
+    fft1 = fft.fftn(field)
     ndim = np.ndim(fft1)
     if np.ndim(dx) == 0:
         dx = [dx]*ndim
@@ -107,14 +107,14 @@ def pk1d(field, dx, get_var=True, simple_var=True, field2=None, kbins=None, dk_f
             fft2 = fft.fftn(field2)
             fft2 = np.expand_dims(fft2, axis=tuple(-np.arange(ndim-ndim2)-1))
         else:
-            fft2 = fft.rfftn(field2)
+            fft2 = fft.fftn(field2)
         fft2 = fft2*np.prod(dx[:ndim2])
-        #fft2 = fft.rfftn(field2)/np.size(field2)
+        #fft2 = fft.fftn(field2)/np.size(field2)
     #corr = (fft1 * fft2.conj()).real
     #corr = corr * np.prod(dx) * np.size(field)
     corr = corr_func(fft1, fft2) / vol
     kall = [fft.fftfreq(field.shape[ii], d=dx[ii])*2*np.pi for ii in range(len(dx)-1)]
-    kall.append(fft.rfftfreq(field.shape[-1], d=dx[-1])*2*np.pi)
+    kall.append(fft.fftfreq(field.shape[-1], d=dx[-1])*2*np.pi)
     kmesh = np.meshgrid(*kall, indexing='ij')
     k1d = 0.0
     for km in kmesh:
@@ -144,7 +144,7 @@ def pk1d(field, dx, get_var=True, simple_var=True, field2=None, kbins=None, dk_f
     pk = pk/norm
     k = k/norm
     if get_var and simple_var:
-        pkvar = pk**2*vol_fct_var/(1.0+norm)
+        pkvar = pk**2*vol_fct_var/(1.0+norm/2.0)
     elif get_var:
         pkf = UnivariateSpline(k, pk, k=1, s=0, ext=0)
         pkitp = pkf(k1d)
@@ -210,7 +210,7 @@ def pk2d(field, dx, get_var=True, simple_var=True, field2=None, kbins=None, dkp_
     NOTE: if provided win_norm would only be used to normalize the P(k) and would not be multiplied to fields inside the function, i.e. it has already be multiplied to the fields before input to the function\n
     NOTE: if field2 is None, win_norm should be the squre of the window function applied to field\n
     '''
-    fft1 = fft.rfftn(field)
+    fft1 = fft.fftn(field)
     ndim = np.ndim(fft1)
     if np.ndim(dx) == 0:
         dx = [dx]*ndim
@@ -233,14 +233,14 @@ def pk2d(field, dx, get_var=True, simple_var=True, field2=None, kbins=None, dkp_
             fft2 = fft.fftn(field2)
             fft2 = np.expand_dims(fft2, axis=tuple(-np.arange(ndim-ndim2)-1))
         else:
-            fft2 = fft.rfftn(field2)
+            fft2 = fft.fftn(field2)
         fft2 = fft2*np.prod(dx[:ndim2])
     #corr = (fft1 * fft2.conj()).real * vol
     corr = corr_func(fft1, fft2) / vol
     kall = [fft.fftfreq(corr.shape[ii], d=dx[ii])*2*np.pi for ii in range(len(dx)-1)]
-    kall.append(fft.rfftfreq(field.shape[-1], d=dx[-1])*2*np.pi)
+    kall.append(fft.fftfreq(field.shape[-1], d=dx[-1])*2*np.pi)
     kmesh = np.meshgrid(*kall, indexing='ij')
-    kzall = kmesh[-1].reshape(-1)
+    kzall = np.abs(kmesh[-1].reshape(-1))
     kpall = 0.0
     for km in kmesh[:-1]:
         kpall = kpall + km**2
@@ -269,7 +269,8 @@ def pk2d(field, dx, get_var=True, simple_var=True, field2=None, kbins=None, dkp_
         dk = dkz_fct*kmin
         #nk = np.around(kmax/dk).astype(int)
         #kbins[1] = np.linspace(-dk/2.0, kmax+dk/2.0, nk)
-        kbins[1] = np.arange(0, kmax+kmin/2.0, dk)
+        #kbins[1] = np.arange(0, kmax+kmin/2.0, dk)
+        kbins[1] = np.arange(-kmin/2.0, kmax+kmin/2.0, dk)
     pk, kpbins, kzbins = np.histogram2d(kpall, kzall, bins=kbins, weights=corr)
     kpeff, _, _ = np.histogram2d(kpall, kzall, bins=kbins, weights=kpall)
     kzeff, _, _ = np.histogram2d(kpall, kzall, bins=kbins, weights=kzall)
@@ -284,7 +285,7 @@ def pk2d(field, dx, get_var=True, simple_var=True, field2=None, kbins=None, dkp_
     kpeff[~v] = np.nan
     kpeff[~v] = np.nan
     if get_var and simple_var:
-        pkvar = pk**2*vol_fct_var/(1.0+norm)
+        pkvar = pk**2*vol_fct_var/(1.0+norm/2.0)
     elif get_var:
         xitp = np.asfortranarray([kpeff[v], kzeff[v]]).T
         pkf = LinearNDInterpolator(xitp, pk[v])
