@@ -201,7 +201,7 @@ if __name__ == '__main__':
     plt.show()
 #%%
 
-def pk2d(field, dx, get_var=True, simple_var=True, field2=None, kbins=None, dkp_fct=4.0, dkz_fct=4.0, corr_func=lambda x, y: (x*y.conj()).real, win_norm=None):
+def pk2d(field, dx, get_var=True, simple_var=True, field2=None, kbins=None, dkp_fct=4.0, dkz_fct=4.0, corr_func=lambda x, y: (x*y.conj()).real, win_norm=None, broadcast_keff=True):
     '''
     If field2 is provided, the number of dimension of field2 should not exceed field's.\n
     If get_var and simple_var, estimate variance simply by pk**2/(Nmode+1), where Nmode is the number of ceils in k space to estimate the pk for each k bin. You can calculate Nmode easily from this variance and the +1 is to correct the bias caused by variance in the estimated pk.\n
@@ -244,7 +244,10 @@ def pk2d(field, dx, get_var=True, simple_var=True, field2=None, kbins=None, dkp_
     kpall = 0.0
     for km in kmesh[:-1]:
         kpall = kpall + km**2
-    kpall = np.sqrt(kpall).reshape(-1)
+    kpall = np.sqrt(kpall)
+    kp1d = kpall[...,0].reshape(-1)
+    kz1d = np.abs(kall[-1])
+    kpall = kpall.reshape(-1)
     corr = corr.reshape(-1)
     #print(kzall.shape, corr.shape, kpall.shape)
     #if np.ndim(kbins) == 0: kbins = [kbins, kbins]
@@ -272,18 +275,29 @@ def pk2d(field, dx, get_var=True, simple_var=True, field2=None, kbins=None, dkp_
         #kbins[1] = np.arange(0, kmax+kmin/2.0, dk)
         kbins[1] = np.arange(-kmin/2.0, kmax+kmin/2.0, dk)
     pk, kpbins, kzbins = np.histogram2d(kpall, kzall, bins=kbins, weights=corr)
-    kpeff, _, _ = np.histogram2d(kpall, kzall, bins=kbins, weights=kpall)
-    kzeff, _, _ = np.histogram2d(kpall, kzall, bins=kbins, weights=kzall)
+
+    norm_p, _ = np.histogram(kp1d, bins=kpbins)
+    kpeff, _ = np.histogram(kp1d, bins=kpbins, weights=kp1d)
+    v = norm_p>0
+    kpeff[v] = kpeff[v]/norm_p[v]
+    kpeff[~v] = np.nan
+
+    norm_z, _ = np.histogram(kz1d, bins=kzbins)
+    kzeff, _ = np.histogram(kz1d, bins=kzbins, weights=kz1d)
+    v = norm_z>0
+    kzeff[v] = kzeff[v]/norm_z[v]
+    kzeff[~v] = np.nan
+
+    if broadcast_keff:
+        kpeff, kzeff = np.meshgrid(kpeff, kzeff, indexing='ij')
+
     kp = (kpbins[1:]+kpbins[:-1])/2.0
     kz = (kzbins[1:]+kzbins[:-1])/2.0
-    norm, _, _ = np.histogram2d(kpall, kzall, bins=kbins)
+
+    norm = norm_p[:,None]*norm_z
     v = norm>0
     pk[v] = pk[v]/norm[v]
-    kpeff[v] = kpeff[v]/norm[v]
-    kzeff[v] = kzeff[v]/norm[v]
     pk[~v] = np.nan
-    kpeff[~v] = np.nan
-    kpeff[~v] = np.nan
     if get_var and simple_var:
         pkvar = pk**2*vol_fct_var/(1.0+norm/2.0)
     elif get_var:
