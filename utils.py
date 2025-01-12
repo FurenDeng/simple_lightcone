@@ -5,12 +5,13 @@ from scipy.io import loadmat
 from glob import glob
 import os
 from scipy.interpolate import interp1d
-from scipy.integrate import cumtrapz
+from scipy.integrate import cumulative_trapezoid as cumtrapz
 from glob import glob
 from tqdm import tqdm
 from scipy.integrate import quad
 from scipy.interpolate import RegularGridInterpolator
 import warnings
+from scipy import fft
 #%%
 class cosmo_utils(object):
     def __init__(self, params_file=None, cosmo_params=None, **itp_table_kwargs):
@@ -236,7 +237,7 @@ def fft_upgrade_rfft(field, n):
     else:
         n = np.asarray(n)
     assert np.all(n%2 == 0)
-    field_fft = np.fft.rfftn(field)
+    field_fft = fft.rfftn(field)
     shp = np.array(list(field_fft.shape))
     shp[:-1] *= n[:-1]
     shp[-1] = (shp[-1]-1)*n[-1] + 1
@@ -248,9 +249,9 @@ def fft_upgrade_rfft(field, n):
         sl +=(slice(idx_mid-this_len//2,idx_mid+this_len//2),)
     sl += (slice(0, field_fft.shape[-1]),)
     axes_shift = tuple(np.arange(len(shp)-1))
-    field_fft_high[sl] = np.fft.fftshift(field_fft, axes=axes_shift)
-    field_fft_high = np.fft.ifftshift(field_fft_high, axes=axes_shift)
-    field_high = np.fft.irfftn(field_fft_high) * np.prod(n)
+    field_fft_high[sl] = fft.fftshift(field_fft, axes=axes_shift)
+    field_fft_high = fft.ifftshift(field_fft_high, axes=axes_shift)
+    field_high = fft.irfftn(field_fft_high) * np.prod(n)
     return field_high, field_fft_high
 
 def fft_upgrade(field, n):
@@ -261,7 +262,7 @@ def fft_upgrade(field, n):
     else:
         n = np.asarray(n)
     assert np.all(n%2 == 0)
-    field_fft = np.fft.fftn(field)
+    field_fft = fft.fftn(field)
     shp = np.array(list(field_fft.shape)) * n
     field_fft_high = np.zeros(shp, dtype=field_fft.dtype)
     sl = ()
@@ -269,9 +270,9 @@ def fft_upgrade(field, n):
         idx_mid = shp[ii]//2
         this_len = field_fft.shape[ii]
         sl +=(slice(idx_mid-this_len//2,idx_mid+this_len//2),)
-    field_fft_high[sl] = np.fft.fftshift(field_fft)
-    field_fft_high = np.fft.ifftshift(field_fft_high) * np.prod(n)
-    field_high = np.fft.ifftn(field_fft_high)
+    field_fft_high[sl] = fft.fftshift(field_fft)
+    field_fft_high = fft.ifftshift(field_fft_high) * np.prod(n)
+    field_high = fft.ifftn(field_fft_high)
     if not np.issubdtype(field.dtype, np.complexfloating):
         field_high = field_high.real
     return field_high, field_fft_high
@@ -281,7 +282,7 @@ if __name__ == '__main__':
     np.random.seed(101)
     y = np.random.rand(128) + np.random.rand(128)*1.J
 
-    #y = np.fft.rfft(y)
+    #y = fft.rfft(y)
     #y[-1] = 0.0
     n_fine = 8
     y_new, _ = fft_upgrade(y, n_fine)
@@ -302,9 +303,9 @@ if __name__ == '__main__':
     x = np.arange(nx)*dx
     y = np.arange(ny)*dy
     z = np.arange(nz)*dz
-    kx = np.fft.fftfreq(nx, d=x[1]-x[0])*2*np.pi
-    ky = np.fft.fftfreq(ny, d=y[1]-y[0])*2*np.pi
-    kz = np.fft.rfftfreq(nz, d=z[1]-z[0])*2*np.pi
+    kx = fft.fftfreq(nx, d=x[1]-x[0])*2*np.pi
+    ky = fft.fftfreq(ny, d=y[1]-y[0])*2*np.pi
+    kz = fft.rfftfreq(nz, d=z[1]-z[0])*2*np.pi
     field_fft = np.random.randn(kx.shape[0], ky.shape[0], kz.shape[0]) + 1.J*np.random.randn(kx.shape[0], ky.shape[0], kz.shape[0])
     field_fft[0,:,:] = 0.0
     field_fft[nx//2,:,:] = 0.0
@@ -318,7 +319,7 @@ if __name__ == '__main__':
     pk[kall!=0] = kall[kall!=0]**-2
 
     field_fft = field_fft*np.sqrt(pk)
-    field = np.fft.irfftn(field_fft)
+    field = fft.irfftn(field_fft)
     #n = 4
     n = [16, 2, 4]
     field_high, field_fft_high = fft_upgrade(field, n)
@@ -339,11 +340,11 @@ if __name__ == '__main__':
     plt.colorbar()
     plt.show()
 
-    fft0 = np.fft.rfftn(field)
-    fft1 = np.fft.rfftn(field_high)
-    kxh = np.fft.fftfreq(field_high.shape[0], d=nx*dx/field_high.shape[0])*2*np.pi
-    kyh = np.fft.fftfreq(field_high.shape[1], d=ny*dy/field_high.shape[1])*2*np.pi
-    kzh = np.fft.rfftfreq(field_high.shape[2], d=nz*dz/field_high.shape[2])*2*np.pi
+    fft0 = fft.rfftn(field)
+    fft1 = fft.rfftn(field_high)
+    kxh = fft.fftfreq(field_high.shape[0], d=nx*dx/field_high.shape[0])*2*np.pi
+    kyh = fft.fftfreq(field_high.shape[1], d=ny*dy/field_high.shape[1])*2*np.pi
+    kzh = fft.rfftfreq(field_high.shape[2], d=nz*dz/field_high.shape[2])*2*np.pi
     dkx = kxh[1] - kxh[0]
     dky = kyh[1] - kyh[0]
     dkz = kzh[1] - kzh[0]
@@ -464,15 +465,15 @@ def fft_smooth(field, dx, sigma):
         dx = [dx]*np.ndim(field)
     if np.ndim(sigma) == 0:
         sigma = [sigma]*np.ndim(field)
-    freqall = [np.fft.fftfreq(field.shape[ii], d=dx[ii]) for ii in range(len(dx)-1)]
-    freqall.append(np.fft.rfftfreq(field.shape[-1], d=dx[-1]))
+    freqall = [fft.fftfreq(field.shape[ii], d=dx[ii]) for ii in range(len(dx)-1)]
+    freqall.append(fft.rfftfreq(field.shape[-1], d=dx[-1]))
     freqmesh = np.meshgrid(*freqall, indexing='ij')
     r2 = 0.0
     for sigmai, freqm in zip(sigma, freqmesh):
         r2 = r2 + freqm**2 * 2*np.pi**2 * sigmai**2
-    fft = np.fft.rfftn(field)*np.exp(-r2)
+    fft = fft.rfftn(field)*np.exp(-r2)
     #win = np.exp(-freq2*2*np.pi**2*sigma**2)
-    return np.fft.irfftn(fft)
+    return fft.irfftn(fft)
 #%%
 if __name__ == '__main__':
     from scipy.ndimage import convolve
@@ -649,5 +650,87 @@ if __name__ == '__main__':
     print(t2, k/2.0*(x_max**2-x_mid**2)+b*(x_max-x_mid), k/2.0*(x_max**2-x_mid**2)+b*(x_max-x_mid)-t2)
 
 #%%
+def histogram1d_discont(x, bins_lower, bins_upper, weights=None):
+    '''
+    Histogram with discontinuous bins\n
+    Count or weighted sum in each [bins_lower[i], bins_upper[i]]\n
+    '''
+    x = np.asarray(x)
+    bins_lower = np.asarray(bins_lower)
+    bins_upper = np.asarray(bins_upper)
+    assert bins_lower.shape[0] == bins_upper.shape[0]
+    assert np.all(bins_upper>bins_lower)
+    if weights is not None:
+        weights = np.asarray(weights)
+        assert weights.shape == x.shape
+        weights = weights.reshape(-1)
+    x = x.reshape(-1)
+    if weights is None:
+        x = np.sort(x)
+    else:
+        isort = np.argsort(x)
+        x = x[isort]
+        weights = weights[isort]
+    idx_l = np.searchsorted(x, bins_lower, side='right')
+    idx_u = np.searchsorted(x, bins_upper, side='right')
+    invalid = (idx_l==x.shape[0])|(idx_u==0)
+    idx_l[invalid] = -1 # mask it
+    idx_u[invalid] = -1
+    idx_l[idx_l>0] = idx_l[idx_l>0]-1
+    if weights is None:
+        out = idx_u - idx_l
+    else:
+        out = np.zeros(bins_upper.shape[0], dtype=weights.dtype)
+        for ii, (il,iu) in enumerate(zip(idx_l, idx_u)):
+            if il<0: continue
+            out[ii] = weights[il:iu].sum()
+    return out
+
+def histogram1d(x, bins, weights=None):
+    '''
+    Wrapper for histogram1d_discont\n
+    If bins is not 2D array, use numpy.histogram directly, otherwise use histogram1d_discont\n
+    '''
+    if np.ndim(bins) <= 1:
+        x = np.asarray(x).reshape(-1)
+        if weights is not None:
+            weights = np.asarray(weights).reshape(-1)
+        return np.histogram(x, bins=bins, weights=weights)
+    elif np.ndim(bins) == 2:
+        hist = histogram1d_discont(x, bins[0], bins[1], weights=weights)
+        return hist, bins
+    else:
+        raise Exception('Only supper 1D bins (continuous histogram) or 2D bins (lower and upper bins for discontinuous histogram), but get %dD bins'%np.ndim(bins))
+
+if __name__ == '__main__':
+    x = np.linspace(0, 10, 100, endpoint=False)
+    np.random.shuffle(x)
+    x = x.reshape(2, 5, 10)
+    lower = [1.0, 2.0, 5.0]
+    upper = [3.0, 7.0, 6.0]
+    weights = np.random.rand(*x.shape)
+    #weights = None
+    
+    out = histogram1d(x, (lower, upper), weights=weights)[0]
+    out2 = np.zeros_like(out)
+    for ii in range(len(lower)):
+        valid = (x>=lower[ii]) & (x<=upper[ii])
+        if weights is None:
+            out2[ii] = valid.sum()
+        else:
+            out2[ii] = weights[valid].sum()
+    print(np.abs(out-out2).max()/out.std())
+    
+    x = np.random.randn(1000).reshape(10, 100)
+    weights = np.random.rand(*x.shape)
+    #weights = None
+    #bins = 21
+    bins = np.linspace(-1, 1, 101)
+    
+    hist, bins = histogram1d(x, bins=bins, weights=weights)
+    x = x.reshape(-1)
+    if weights is not None: weights=weights.reshape(-1)
+    hist2, bins2 = np.histogram(x, bins=bins, weights=weights)
+    print(np.abs(hist-hist2).max())
 #%%
 #%%

@@ -5,6 +5,7 @@ from scipy.io import loadmat
 from scipy.interpolate import UnivariateSpline, LinearNDInterpolator, NearestNDInterpolator, interpn
 import warnings
 from scipy import fft
+from utils import linear_interp, histogram1d
 #%%
 def plot_pn(x, y, err=None, c=None, ls_pos='-', ls_neg='--', label=None, n_interp=1000, **kwargs):
     '''
@@ -134,9 +135,9 @@ def pk1d(field, dx, get_var=True, simple_var=True, field2=None, kbins=None, dk_f
         keep_length = False
     else:
         keep_length = True
-    pk, kbins = np.histogram(k1d, bins=kbins, weights=corr)
-    k, _ = np.histogram(k1d, bins=kbins, weights=k1d)
-    norm, _ = np.histogram(k1d, bins=kbins)
+    pk, kbins = histogram1d(k1d, bins=kbins, weights=corr)
+    k, _ = histogram1d(k1d, bins=kbins, weights=k1d)
+    norm, _ = histogram1d(k1d, bins=kbins)
     v = norm>0
     pk = pk[v]
     k = k[v]
@@ -149,7 +150,7 @@ def pk1d(field, dx, get_var=True, simple_var=True, field2=None, kbins=None, dk_f
         pkf = UnivariateSpline(k, pk, k=1, s=0, ext=0)
         pkitp = pkf(k1d)
         dpk = corr - pkitp
-        pkvar, _ = np.histogram(k1d, bins=kbins, weights=dpk**2)
+        pkvar, _ = histogram1d(k1d, bins=kbins, weights=dpk**2)
         pkvar = pkvar[v]
         pkvar = pkvar/norm
         pkvar[norm==1] = np.inf
@@ -200,6 +201,48 @@ if __name__ == '__main__':
     plt.yscale('log')
     plt.show()
 #%%
+def pk1d_multi_fields(fields, dx, fields2=None, remove_mean=True, k_out=None, win=None, win2=None, alpha_weight=2, interpolator=linear_interp, **kwargs):
+    nf = len(fields)
+    try:
+        iter(fields2)
+    except TypeError:
+        fields2 = [fields2]*nf
+    assert 'win_norm' not in kwargs, 'Do not input win_norm but input win, win2 and the window would be multiplied to fields and fields2 automatically.'
+    if k_out is not None:
+        k_out = np.asarray(k_out)
+        k_shp = k_out.shape
+        k_out = k_out.reshape(-1)
+    first_iter = True
+    for ii, (f1, f2) in enumerate(zip(fields, fields2)):
+        if remove_mean:
+            f1 = f1 - f1.mean()
+            if f2 is not None: f2 = f2 - f2.mean()
+        win_norm = 1
+        if win is not None:
+            f1 = f1 * win
+            win_norm = win
+        if f2 is None:
+            if win_norm is not None: win_norm = win_norm**2
+        elif win2 is not None:
+            f2 = f2 * win2
+            win_norm = win_norm * win2
+        if np.array_equal(win_norm, 1): win_norm = None
+        pk, k, _ = pk1d(f1, dx, field2=f2, win_norm=win_norm, **kwargs)
+        if ii == 0:
+            if k_out is None:
+                pk_all = np.zeros([nf, k.shape[0]], dtype=pk.dtype)
+            else:
+                pk_all = np.zeros([nf, k_out.shape[0]], dtype=pk.dtype)
+        if k_out is None:
+            pk_all[ii] = pk
+        else:
+            y_itp = pk*k**alpha_weight
+            pk_all[ii] = interpolator(np.log(k_out), np.log(k), y_itp)/k_out**alpha_weight
+    if k_out is None:
+        k_out = k
+        k_shp = k.shape
+    pk_all = pk_all.reshape((nf,)+k_shp)
+    return pk_all, k_out
 
 def pk2d(field, dx, get_var=True, simple_var=True, field2=None, kbins=None, dkp_fct=4.0, dkz_fct=4.0, corr_func=lambda x, y: (x*y.conj()).real, win_norm=None, broadcast_keff=True):
     '''
